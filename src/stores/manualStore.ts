@@ -36,7 +36,7 @@ interface ManualStore {
 export const useManualStore = create<ManualStore>((set) => ({
   outputs: [],
   useAi: false,
-  aiModel: 'gpt-4o-mini',
+  aiModel: 'openai/gpt-4o-mini',
   apiKey: localStorage.getItem('ai_api_key') || '',
   isGenerating: false,
 

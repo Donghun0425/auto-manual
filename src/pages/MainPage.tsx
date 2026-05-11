@@ -65,6 +65,12 @@ export function MainPage() {
       return;
     }
 
+    // AI 활용이 켜져 있는데 API Key가 없으면 즉시 안내
+    if (useAi && !apiKey.trim()) {
+      alert('AI 활용 생성을 사용하려면 API Key를 입력해주세요.');
+      return;
+    }
+
     setLogs([]);
     setAnalyzing(true);
     setGenerating(true);
@@ -81,8 +87,8 @@ export function MainPage() {
       addLog({ type: 'success', message: `파싱 완료: ${results.length}개 파일` });
 
       // AI 활용 시 추가 처리
-      if (useAi && apiKey) {
-        addLog({ type: 'info', message: `AI 처리 시작 (${results.length}개 파일)` });
+      if (useAi && apiKey.trim()) {
+        addLog({ type: 'info', message: `AI 처리 시작 (${results.length}개 파일, 모델: ${aiModel})` });
         for (const result of results) {
           try {
             const programName = result.overview.programName || result.filePath.replace(/.*[\\/]/, '');
@@ -239,10 +245,10 @@ export function MainPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="gpt-4o-mini">GPT-4o Mini</SelectItem>
-                    <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                    <SelectItem value="gpt-4.1-mini">GPT-4.1 Mini</SelectItem>
-                    <SelectItem value="gpt-4.1">GPT-4.1</SelectItem>
+                    <SelectItem value="openai/gpt-4o-mini">GPT-4o Mini</SelectItem>
+                    <SelectItem value="openai/gpt-4o">GPT-4o</SelectItem>
+                    <SelectItem value="openai/gpt-4.1-mini">GPT-4.1 Mini</SelectItem>
+                    <SelectItem value="openai/gpt-4.1">GPT-4.1</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -258,9 +264,17 @@ export function MainPage() {
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="GitHub Models API Key를 입력하세요"
-                  className="flex-1 h-8 rounded-md border border-input bg-background px-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className={`flex-1 h-8 rounded-md border bg-background px-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                    apiKey.trim() ? 'border-input' : 'border-destructive'
+                  }`}
                 />
               </div>
+              {!apiKey.trim() && (
+                <p className="text-xs text-destructive flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  API Key를 입력해야 AI 기능을 사용할 수 있습니다.
+                </p>
+              )}
             </div>
           )}
 
