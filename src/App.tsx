@@ -6,9 +6,11 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { MainPage } from './pages/MainPage';
 import { ResultPage } from './pages/ResultPage';
 import { Header } from './components/layout/Header';
+import { TooltipProvider } from './components/ui/tooltip';
 
 function App() {
   return (
+    <TooltipProvider delayDuration={300}>
     <BrowserRouter>
       <div className="min-h-screen bg-background text-foreground">
         <Header />
@@ -20,6 +22,7 @@ function App() {
         </main>
       </div>
     </BrowserRouter>
+    </TooltipProvider>
   );
 }
 
