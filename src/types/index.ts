@@ -64,6 +64,8 @@ export interface ExtButtonInfo {
   functionName: string;
   /** 버튼 번호 */
   index: number;
+  /** 함수 바디 분석으로 생성된 다단계 설명 (개행 구분) */
+  description?: string;
 }
 
 /**
@@ -98,10 +100,12 @@ export interface PopupInfo {
  * 탭페이지(임베디드 앱) 정보
  */
 export interface TabPageInfo {
-  /** 앱 URI */
+  /** 앱 URI (PatisUtils.loadEmbApp 방식) */
   appUri: string;
   /** 호출 위치(함수명) */
   calledFrom: string;
+  /** 탭 레이블 (TabItem.text 기반 직접 선언 방식에서 추출) */
+  tabLabel?: string;
 }
 
 /**
