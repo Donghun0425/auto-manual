@@ -9,47 +9,13 @@ import { AnalysisResult, ExtButtonInfo } from '@/types';
  * @param result - 파일 분석 결과
  * @returns Markdown 문자열
  */
-function getMdExtBtnStepLines(
-  btn: ExtButtonInfo,
-  validations: { functionName: string; message: string }[],
-  hasConditionGroup: boolean,
-): string[] {
-  if (btn.name === '닫기' || /close/i.test(btn.functionName)) {
-    return ['Step1. 현재 화면을 닫는다.'];
-  }
-  const fnLower = btn.functionName.toLowerCase();
-  const related = validations
-    .filter((v) => {
-      const msg = v.message;
-      const vfn = v.functionName.toLowerCase();
-      return msg.includes(btn.name) || vfn.includes(fnLower) || vfn === fnLower;
-    })
-    .map((v) => v.message);
-
-  const steps: string[] = [];
-  steps.push(`Step1. 그리드에서 처리할 대상 행을 선택한다.`);
-  if (hasConditionGroup) {
-    steps.push(`Step2. 처리조건 항목을 설정한다.`);
-    steps.push(`Step3. '${btn.name}' 버튼을 클릭한다.`);
-    if (related.length > 0) {
-      steps.push(`Step4. 처리 전 확인사항을 검토한다. (⚠ ${related[0]})`);
-      steps.push(`Step5. 처리 결과를 목록에서 확인한다.`);
-    } else {
-      steps.push(`Step4. 확인 메시지가 표시되면 확인을 클릭하여 처리한다.`);
-      steps.push(`Step5. 처리 결과를 목록에서 확인한다.`);
-    }
-  } else {
-    steps.push(`Step2. '${btn.name}' 버튼을 클릭한다.`);
-    if (related.length > 0) {
-      steps.push(`Step3. 처리 전 확인사항을 검토한다. (⚠ ${related[0]})`);
-      steps.push(`Step4. 확인 메시지가 표시되면 확인을 클릭하여 처리한다.`);
-      steps.push(`Step5. 처리 결과를 목록에서 확인한다.`);
-    } else {
-      steps.push(`Step3. 확인 메시지가 표시되면 확인을 클릭하여 처리한다.`);
-      steps.push(`Step4. 처리 결과를 목록에서 확인한다.`);
-    }
-  }
-  return steps;
+/** 기타 버튼 설명을 Step 문자열 배열로 반환 (다단계 지원) */
+function getMdBtnStepLines(btn: ExtButtonInfo): string[] {
+  const desc = btn.description
+    ?? (btn.name === '닫기' || /close/i.test(btn.functionName)
+      ? 'Step1. 현재 화면을 닫는다.'
+      : `Step1. '${btn.name}' 버튼을 클릭한다.`);
+  return desc.split('\n');
 }
 
 export function generateMarkdown(result: AnalysisResult): string {
@@ -83,14 +49,11 @@ export function generateMarkdown(result: AnalysisResult): string {
   if (result.aiUsageText) {
     lines.push(result.aiUsageText);
     lines.push('');
-    // AI 텍스트에 언급되지 않은 extraButtons만 추가 (중복 방지) — 다단계 Step
-    const aiHasCondGrp = result.items.conditionGroups.some(g => g.groupType === '처리조건' || g.groupType === '일괄처리');
+    // AI 텍스트에 언급되지 않은 extraButtons만 추가 (중복 방지)
     for (const btn of result.usage.extraButtons) {
       if (result.aiUsageText.includes(btn.name)) continue;
       lines.push(`{B}${btn.name}{/B}`);
-      for (const step of getMdExtBtnStepLines(btn, result.notes.validations, aiHasCondGrp)) {
-        lines.push(step);
-      }
+      lines.push(...getMdBtnStepLines(btn));
       lines.push('');
     }
     // PatisTitleBar 기능 추가 (AI 텍스트에 이미 포함된 경우 중복 방지)
@@ -117,8 +80,8 @@ export function generateMarkdown(result: AnalysisResult): string {
         lines.push('');
       }
       for (const btn of tb.extButtons) {
-        lines.push(`{B}${btn.name}{/B}`);
-        lines.push(`Step1. ${btn.name} 버튼을 클릭한다.`);
+        lines.push(`{B}${tbLabel} - ${btn.name}{/B}`);
+        lines.push(...getMdBtnStepLines(btn));
         lines.push('');
       }
     }
@@ -168,13 +131,10 @@ export function generateMarkdown(result: AnalysisResult): string {
     lines.push('');
   }
 
-  // 추가 버튼 (menu.extButtons) — 다단계 Step
-  const staticHasCondGrp = result.items.conditionGroups.some(g => g.groupType === '처리조건' || g.groupType === '일괄처리');
+  // 추가 버튼
   for (const btn of menu.extButtons) {
     lines.push(`{B}${btn.name}{/B}`);
-    for (const step of getMdExtBtnStepLines(btn, result.notes.validations, staticHasCondGrp)) {
-      lines.push(step);
-    }
+    lines.push(...getMdBtnStepLines(btn));
     lines.push('');
   }
 
@@ -201,18 +161,16 @@ export function generateMarkdown(result: AnalysisResult): string {
     }
     // PatisTitleBar 추가 버튼
     for (const btn of tb.extButtons) {
-      lines.push(`{B}${btn.name}{/B}`);
-      lines.push(`Step1. ${btn.name} 버튼을 클릭한다.`);
+      lines.push(`{B}${tbLabel} - ${btn.name}{/B}`);
+      lines.push(...getMdBtnStepLines(btn));
       lines.push('');
     }
   }
 
-  // 기타 버튼 (PatisMenuTitleBar/PatisTitleBar 외 일반 Button 컨트롤) — 다단계 Step
+  // 기타 버튼 (PatisMenuTitleBar/PatisTitleBar 외 일반 Button 컨트롤)
   for (const btn of result.usage.extraButtons) {
     lines.push(`{B}${btn.name}{/B}`);
-    for (const step of getMdExtBtnStepLines(btn, result.notes.validations, staticHasCondGrp)) {
-      lines.push(step);
-    }
+    lines.push(...getMdBtnStepLines(btn));
     lines.push('');
   }
   } // end else (no AI usage text)
@@ -313,7 +271,7 @@ export function generateMarkdown(result: AnalysisResult): string {
     lines.push('## 탭페이지');
     lines.push('');
     for (const tp of result.tabPages) {
-      lines.push(`- ${tp.appUri}`);
+      lines.push(`- ${tp.tabLabel ? `${tp.appUri} (${tp.tabLabel})` : tp.appUri}`);
     }
     lines.push('');
   }

@@ -192,12 +192,13 @@ function generateOverviewHtml(result: AnalysisResult): string {
   </div>`;
 }
 
-/** 기타 버튼 1단계 설명 생성 */
-function getExtraBtnStep(btn: ExtButtonInfo): string {
-  if (btn.name === '닫기' || /close/i.test(btn.functionName)) {
-    return 'Step1. 현재 화면을 닫는다.';
-  }
-  return `Step1. '${btn.name}' 버튼을 클릭한다.`;
+/** 기타 버튼 설명을 <p class="step"> 배열로 반환 (다단계 지원) */
+function renderBtnStepLines(btn: ExtButtonInfo): string[] {
+  const desc = btn.description
+    ?? (btn.name === '닫기' || /close/i.test(btn.functionName)
+      ? 'Step1. 현재 화면을 닫는다.'
+      : `Step1. '${btn.name}' 버튼을 클릭한다.`);
+  return desc.split('\n').map(line => `<p class="step">${escapeHtml(line)}</p>`);
 }
 
 /** 사용방법 HTML 생성 */
@@ -228,7 +229,7 @@ function generateUsageHtml(result: AnalysisResult): string {
     for (const btn of result.usage.extraButtons) {
       if (result.aiUsageText.includes(btn.name)) continue;
       lines.push(`<span class="bold-tag">{B}${escapeHtml(btn.name)}{/B}</span>`);
-      lines.push(`<p class="step">${escapeHtml(getExtraBtnStep(btn))}</p>`);
+      lines.push(...renderBtnStepLines(btn));
     }
     // PatisTitleBar 기능 추가 (AI 텍스트에 이미 포함된 경우 중복 방지)
     for (const tb of result.usage.titleBars) {
@@ -251,12 +252,12 @@ function generateUsageHtml(result: AnalysisResult): string {
         lines.push(`<p class="step">Step2. '${escapeHtml(tbLabel)}' 타이틀바의 '삭제' 버튼을 클릭한다.</p>`);
       }
       for (const btn of tb.extButtons) {
-        lines.push(`<span class="bold-tag">{B}${escapeHtml(btn.name)}{/B}</span>`);
-        lines.push(`<p class="step">Step1. ${escapeHtml(btn.name)} 버튼을 클릭한다.</p>`);
+        lines.push(`<span class="bold-tag">{B}${escapeHtml(tbLabel)} - ${escapeHtml(btn.name)}{/B}</span>`);
+        lines.push(...renderBtnStepLines(btn));
       }
     }
     lines.push('</div>');
-    return lines.join('\n');
+    return lines.join('\n').replace(/\{B\}|\{\/B\}/g, '');
   }
 
   // AI 없을 때 정적 템플릿
@@ -311,7 +312,7 @@ function generateUsageHtml(result: AnalysisResult): string {
   // 추가 버튼
   for (const btn of menu.extButtons) {
     lines.push(`<span class="bold-tag">{B}${escapeHtml(btn.name)}{/B}</span>`);
-    lines.push(`<p class="step">Step1. ${escapeHtml(btn.name)} 버튼을 클릭한다.</p>`);
+    lines.push(...renderBtnStepLines(btn));
   }
 
   // PatisTitleBar 기능
@@ -334,19 +335,19 @@ function generateUsageHtml(result: AnalysisResult): string {
     }
     // PatisTitleBar 추가 버튼
     for (const btn of tb.extButtons) {
-      lines.push(`<span class="bold-tag">{B}${escapeHtml(btn.name)}{/B}</span>`);
-      lines.push(`<p class="step">Step1. ${escapeHtml(btn.name)} 버튼을 클릭한다.</p>`);
+      lines.push(`<span class="bold-tag">{B}${escapeHtml(tbLabel)} - ${escapeHtml(btn.name)}{/B}</span>`);
+      lines.push(...renderBtnStepLines(btn));
     }
   }
 
   // 기타 버튼 (PatisMenuTitleBar/PatisTitleBar 외 일반 Button 컨트롤)
   for (const btn of result.usage.extraButtons) {
     lines.push(`<span class="bold-tag">{B}${escapeHtml(btn.name)}{/B}</span>`);
-    lines.push(`<p class="step">${escapeHtml(getExtraBtnStep(btn))}</p>`);
+    lines.push(...renderBtnStepLines(btn));
   }
 
   lines.push('</div>');
-  return lines.join('\n');
+  return lines.join('\n').replace(/\{B\}|\{\/B\}/g, '');
 }
 
 /** 참고사항 HTML 생성 (조회/저장/삭제로 분류되지 않은 기타 검증 메시지만 표시) */
@@ -501,7 +502,8 @@ function generateTabPagesHtml(result: AnalysisResult): string {
 
   const lines: string[] = ['<h2>탭페이지</h2>', '<div class="section"><ul>'];
   for (const tp of result.tabPages) {
-    lines.push(`<li><span class="popup-url tabpage-link" data-tabpage-uri="${escapeHtml(tp.appUri)}" style="cursor:pointer;">${escapeHtml(tp.appUri)}</span></li>`);
+    const display = tp.tabLabel ? `${tp.appUri} (${tp.tabLabel})` : tp.appUri;
+    lines.push(`<li><span class="popup-url tabpage-link" data-tabpage-uri="${escapeHtml(tp.appUri)}" style="cursor:pointer;">${escapeHtml(display)}</span></li>`);
   }
   lines.push('</ul></div>');
   return lines.join('\n');

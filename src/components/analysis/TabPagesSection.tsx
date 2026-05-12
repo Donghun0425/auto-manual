@@ -20,6 +20,7 @@ export function TabPagesSection({ tabPages, allFilePaths = [], onNavigate }: Tab
     <div className="space-y-2 py-2">
       <ul className="space-y-2">
         {tabPages.map((tp, idx) => {
+          const displayText = tp.tabLabel ? `${tp.appUri} (${tp.tabLabel})` : tp.appUri;
           const matchedPath = matchUriToFilePath(tp.appUri, allFilePaths);
           const isNavigable = !!matchedPath && !!onNavigate;
 
@@ -32,14 +33,14 @@ export function TabPagesSection({ tabPages, allFilePaths = [], onNavigate }: Tab
                   title="클릭하여 해당 탭페이지 분석결과로 이동"
                   onClick={() => onNavigate!(matchedPath!)}
                 >
-                  {tp.appUri}
+                  {displayText}
                   <ExternalLink className="h-3 w-3 shrink-0" />
                 </button>
               ) : (
-                <code className="text-xs font-mono text-foreground/80">{tp.appUri}</code>
+                <code className="text-xs font-mono text-foreground/80">{displayText}</code>
               )}
               <span className="ml-auto text-[10px] text-muted-foreground border rounded px-1.5 py-0.5">
-                {tp.calledFrom}
+                {tp.tabLabel ? '레이아웃' : tp.calledFrom}
               </span>
             </li>
           );
