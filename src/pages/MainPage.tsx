@@ -12,13 +12,13 @@ import { useManualStore } from '@/stores/manualStore';
 import { analyzeFiles } from '@/parser';
 import { generateHtml } from '@/generators/htmlGenerator';
 import { generateMarkdown } from '@/generators/markdownGenerator';
-import { generateAiOverview, generateAiUsage, generateAiNotes, generateAiColumnDescriptions, generateAiConditionDescriptions, AiCallLog } from '@/services/aiService';
+import { generateAiOverview, generateAiUsage, generateAiNotes, generateAiColumnDescriptions, generateAiConditionDescriptions, AiCallLog, ApiCallOptions } from '@/services/aiService';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { FileText, Sparkles, Key, Loader2, Terminal, Info, Zap, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { FileText, Sparkles, Key, Loader2, Terminal, Info, Zap, AlertCircle, CheckCircle2, Plug } from 'lucide-react';
 
 interface LogEntry {
   id: number;
@@ -34,7 +34,8 @@ export function MainPage() {
   const files = useFileStore((s) => s.files);
   const getCheckedFiles = useFileStore((s) => s.getCheckedFiles);
   const { setResults, setAnalyzing, isAnalyzing } = useAnalysisStore();
-  const { useAi, toggleAi, aiModel, setAiModel, apiKey, setApiKey, setOutputs, setGenerating } =
+  const { useAi, toggleAi, aiModel, setAiModel, apiKey, setApiKey, setOutputs, setGenerating,
+    useVsCodeProxy, toggleVsCodeProxy, proxyUrl, setProxyUrl, proxyAuthToken, setProxyAuthToken } =
     useManualStore();
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -65,11 +66,18 @@ export function MainPage() {
       return;
     }
 
-    // AI 활용이 켜져 있는데 API Key가 없으면 즉시 안내
+    // GitHub Model AI가 켜져 있는데 API Key가 없으면 즉시 안내
     if (useAi && !apiKey.trim()) {
-      alert('AI 활용 생성을 사용하려면 API Key를 입력해주세요.');
+      alert('GitHub Model 활용 생성을 사용하려면 API Key를 입력해주세요.');
       return;
     }
+
+    // AI 모드 단일 선택 여부 (둘 중 하나만 동작)
+    const isAiEnabled = (useAi && !!apiKey.trim()) || useVsCodeProxy;
+    const aiOptions: ApiCallOptions | undefined = useVsCodeProxy
+      ? { proxyUrl, proxyAuthToken: proxyAuthToken || undefined }
+      : undefined;
+    const effectiveApiKey = useAi ? apiKey : '';
 
     setLogs([]);
     setAnalyzing(true);
@@ -87,21 +95,22 @@ export function MainPage() {
       addLog({ type: 'success', message: `파싱 완료: ${results.length}개 파일` });
 
       // AI 활용 시 추가 처리
-      if (useAi && apiKey.trim()) {
-        addLog({ type: 'info', message: `AI 처리 시작 (${results.length}개 파일, 모델: ${aiModel})` });
+      if (isAiEnabled) {
+        const modeLabel = useVsCodeProxy ? 'vsCode Extension 프록시' : `GitHub Models (${aiModel})`;
+        addLog({ type: 'info', message: `AI 처리 시작 (${results.length}개 파일, 모드: ${modeLabel})` });
         for (const result of results) {
           try {
-            const programName = result.overview.programName || result.filePath.replace(/.*[\\/]/, '');
+            const programName = result.overview.programName || result.filePath.replace(/.*[\/]/, '');
             addLog({ type: 'info', message: `처리 중: ${programName}` });
 
             const onLog = (log: AiCallLog) =>
               addLog({ type: 'api', message: log.apiCall, promptTokens: log.promptTokens, completionTokens: log.completionTokens });
 
-            const aiOverview = await generateAiOverview(apiKey, aiModel, result, onLog);
+            const aiOverview = await generateAiOverview(effectiveApiKey, aiModel, result, onLog, aiOptions);
             if (aiOverview) {
               result.overview.description = aiOverview;
             }
-            const aiUsage = await generateAiUsage(apiKey, aiModel, result, onLog);
+            const aiUsage = await generateAiUsage(effectiveApiKey, aiModel, result, onLog, aiOptions);
             if (aiUsage) {
               result.aiUsageText = aiUsage;
             }
@@ -117,12 +126,13 @@ export function MainPage() {
             for (const group of result.items.conditionGroups) {
               if (group.controls.length > 0) {
                 const descs = await generateAiConditionDescriptions(
-                  apiKey, aiModel,
+                  effectiveApiKey, aiModel,
                   `${result.overview.programName} - ${group.groupType}`,
                   group.controls,
                   onLog,
                   group.groupType,
                   group.groupType === '처리조건' ? txFeatures : [],
+                  aiOptions,
                 );
                 group.controls.forEach((ctrl, i) => {
                   ctrl.description = descs[i] ?? '';
@@ -134,7 +144,7 @@ export function MainPage() {
             for (const grid of result.items.grids) {
               if (grid.columns.length > 0 && !grid.skipAiDescriptions) {
                 const descs = await generateAiColumnDescriptions(
-                  apiKey, aiModel, grid.title || grid.gridId, grid.columns, onLog
+                  effectiveApiKey, aiModel, grid.title || grid.gridId, grid.columns, onLog, aiOptions
                 );
                 grid.columns.forEach((col, i) => {
                   col.description = descs[i] ?? '';
@@ -166,7 +176,7 @@ export function MainPage() {
                 groupsForAi.push({ label, messages });
               }
               const aiNotesMap = await generateAiNotes(
-                apiKey, aiModel, result.overview.programName, groupsForAi, onLog
+                effectiveApiKey, aiModel, result.overview.programName, groupsForAi, onLog, aiOptions
               );
               result.aiNotesDescriptions = aiNotesMap;
             }
@@ -220,21 +230,21 @@ export function MainPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* AI 사용 토글 */}
-          <div className="flex items-center justify-between rounded-lg border p-3">
+          {/* GitHub Model 활용 생성 토글 */}
+          <div className={`flex items-center justify-between rounded-lg border p-3 ${useVsCodeProxy ? 'opacity-50' : ''}`}>
             <div className="flex items-center gap-3">
               <Sparkles className="h-4 w-4 text-amber-500" />
               <div>
-                <p className="text-sm font-medium">AI 활용 생성</p>
+                <p className="text-sm font-medium">Github Model 활용 생성</p>
                 <p className="text-xs text-muted-foreground">
-                  GitHub Models API를 통해 자연어 설명을 자동 생성합니다.
+                  GitHub Models REST API를 통해 자연어 설명을 자동 생성합니다.
                 </p>
               </div>
             </div>
-            <Switch checked={useAi} onCheckedChange={toggleAi} />
+            <Switch checked={useAi} onCheckedChange={toggleAi} disabled={useVsCodeProxy} />
           </div>
 
-          {/* AI 옵션 (AI 사용 시에만 표시) */}
+          {/* GitHub Model AI 옵션 */}
           {useAi && (
             <div className="space-y-3 rounded-lg border border-dashed p-4 bg-muted/30">
               {/* AI 모델 선택 */}
@@ -275,6 +285,57 @@ export function MainPage() {
                   API Key를 입력해야 AI 기능을 사용할 수 있습니다.
                 </p>
               )}
+            </div>
+          )}
+
+          {/* vsCode Extension 활용 생성 토글 */}
+          <div className={`flex items-center justify-between rounded-lg border p-3 ${useAi ? 'opacity-50' : ''}`}>
+            <div className="flex items-center gap-3">
+              <Plug className="h-4 w-4 text-blue-500" />
+              <div>
+                <p className="text-sm font-medium">vsCode Extension 활용 생성</p>
+                <p className="text-xs text-muted-foreground">
+                  Copilot LM Proxy Extension을 경유하여 Copilot 모델을 사용합니다.
+                </p>
+              </div>
+            </div>
+            <Switch checked={useVsCodeProxy} onCheckedChange={toggleVsCodeProxy} disabled={useAi} />
+          </div>
+
+          {/* vsCode Extension 프록시 옵션 */}
+          {useVsCodeProxy && (
+            <div className="space-y-3 rounded-lg border border-dashed border-blue-200 p-4 bg-blue-50/30">
+              {/* 프록시 URL */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium w-24 shrink-0">프록시 URL</label>
+                <input
+                  type="text"
+                  value={proxyUrl}
+                  onChange={(e) => setProxyUrl(e.target.value)}
+                  placeholder="http://localhost:3100"
+                  className="flex-1 h-8 rounded-md border border-input bg-background px-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                />
+              </div>
+
+              {/* 인증 토큰 (선택) */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium w-24 shrink-0">
+                  <Key className="h-3 w-3 inline mr-1" />
+                  인증 토큰
+                </label>
+                <input
+                  type="password"
+                  value={proxyAuthToken}
+                  onChange={(e) => setProxyAuthToken(e.target.value)}
+                  placeholder="선택사항 — 프록시 인증 토큰 설정 시 입력"
+                  className="flex-1 h-8 rounded-md border border-input bg-background px-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                />
+              </div>
+
+              <p className="text-xs text-blue-600 flex items-center gap-1">
+                <Plug className="h-3 w-3" />
+                VS Code에서 “Copilot Proxy: 서버 시작” 명령을 먼저 실행하세요.
+              </p>
             </div>
           )}
 
