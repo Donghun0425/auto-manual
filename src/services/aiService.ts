@@ -14,35 +14,67 @@ interface AiMessage {
 /** AI API 호출 결과 (응답 텍스트 + 토큰 사용량) */
 interface ApiCallResult {
   text: string;
-  promptTokens: number;
-  completionTokens: number;
+  /** 프록시가 usage 미반환 시 undefined */
+  promptTokens?: number;
+  completionTokens?: number;
 }
 
 /** AI API 호출 로그 엔트리 (외부 콜백용) */
 export interface AiCallLog {
   apiCall: string;
-  promptTokens: number;
-  completionTokens: number;
+  /** 프록시가 usage 미반환 시 undefined → 로그에서 숨김 */
+  promptTokens?: number;
+  completionTokens?: number;
 }
 
 /**
- * GitHub Models API를 통해 AI 응답 생성
- * @param apiKey - GitHub Models API 키
- * @param model - 모델명 (gpt-4o-mini 등)
+ * AI 호출 옵션
+ * - proxyUrl 설정 시 vsCode Extension 프록시 경유
+ * - 미설정 시 GitHub Models REST API 직접 호출
+ */
+export interface ApiCallOptions {
+  /** vsCode Extension 프록시 URL (ex: http://localhost:3100) */
+  proxyUrl?: string;
+  /** 프록시 인증 토큰 (선택) */
+  proxyAuthToken?: string;
+}
+
+/**
+ * GitHub Models API 또는 vsCode Extension 프록시를 통해 AI 응답 생성
+ * @param apiKey - GitHub Models API 키 (프록시 모드 시 미사용)
+ * @param model  - 모델명
  * @param messages - 대화 메시지 배열
- * @returns AI 응답 텍스트
+ * @param options  - 프록시 옵션 (proxyUrl 설정 시 프록시 모드)
  */
 async function callGitHubModelsApi(
   apiKey: string,
   model: string,
-  messages: AiMessage[]
+  messages: AiMessage[],
+  options?: ApiCallOptions,
 ): Promise<ApiCallResult> {
-  const response = await fetch('https://models.inference.ai.azure.com/chat/completions', {
+  const isProxy = !!options?.proxyUrl;
+
+  const url = isProxy
+    ? `${options!.proxyUrl}/v1/chat/completions`
+    : 'https://models.github.ai/inference/chat/completions';
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (isProxy) {
+    if (options!.proxyAuthToken) {
+      headers['Authorization'] = `Bearer ${options!.proxyAuthToken}`;
+    }
+  } else {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+    headers['Accept'] = 'application/vnd.github+json';
+    headers['X-GitHub-Api-Version'] = '2026-03-10';
+  }
+
+  const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
+    headers,
     body: JSON.stringify({
       model,
       messages,
@@ -58,10 +90,16 @@ async function callGitHubModelsApi(
 
   const data = await response.json();
   const usage = data.usage ?? {};
+  // OpenAI 호환: prompt_tokens / completion_tokens
+  // VS Code Extension 프록시: input_tokens / output_tokens (vscode.LanguageModelUsage)
+  const promptToks: number | undefined =
+    usage.prompt_tokens ?? usage.input_tokens ?? undefined;
+  const completionToks: number | undefined =
+    usage.completion_tokens ?? usage.output_tokens ?? undefined;
   return {
     text: data.choices?.[0]?.message?.content || '',
-    promptTokens: usage.prompt_tokens ?? 0,
-    completionTokens: usage.completion_tokens ?? 0,
+    promptTokens:    (promptToks    !== undefined && promptToks    > 0) ? promptToks    : undefined,
+    completionTokens:(completionToks !== undefined && completionToks > 0) ? completionToks : undefined,
   };
 }
 
@@ -76,7 +114,8 @@ export async function generateAiOverview(
   apiKey: string,
   model: string,
   result: AnalysisResult,
-  onLog?: (log: AiCallLog) => void
+  onLog?: (log: AiCallLog) => void,
+  options?: ApiCallOptions,
 ): Promise<string> {
   const messages: AiMessage[] = [
     {
@@ -96,7 +135,7 @@ export async function generateAiOverview(
     },
   ];
 
-  const { text, promptTokens, completionTokens } = await callGitHubModelsApi(apiKey, model, messages);
+  const { text, promptTokens, completionTokens } = await callGitHubModelsApi(apiKey, model, messages, options);
   onLog?.({ apiCall: '화면개요 생성', promptTokens, completionTokens });
   return text;
 }
@@ -112,7 +151,8 @@ export async function generateAiUsage(
   apiKey: string,
   model: string,
   result: AnalysisResult,
-  onLog?: (log: AiCallLog) => void
+  onLog?: (log: AiCallLog) => void,
+  options?: ApiCallOptions,
 ): Promise<string> {
   const menu = result.usage.menuTitleBar;
 
@@ -229,7 +269,7 @@ Step2. 설명
 - 상단 메뉴 타이틀바의 조회: 조회조건 입력 → 조회 버튼 클릭 → 결과 목록 확인 흐름으로 작성
 - 상단 메뉴 타이틀바의 신규/저장: 데이터 입력 → 필수값 확인 → 저장 실행 → 완료 확인 흐름으로 작성
 - 상단 메뉴 타이틀바의 삭제: 항목 선택 → 삭제 실행 → 확인 메시지 처리 흐름으로 작성
-- 그리드 타이틀바 기능은 반드시 '{B}타이틀바명 - 신규{/B}', '{B}타이틀바명 - 저장{/B}', '{B}타이틀바명 - 삭제{/B}' 형식으로 소제목을 작성하고, 그리드 행 입력/수정 → 타이틀바 버튼 클릭 → 완료 흐름으로 작성
+- 그리드 타이틀바 기능은 소제목을 반드시 '{B}타이틀바명 - 기능명{/B}' 형식으로 작성하세요. 단, 신규/저장/삭제는 반드시 '제공 기능(그리드 타이틀바)' 목록에 해당 항목이 명시된 경우에만 작성하고, 목록에 없는 기능은 절대 추가하지 마세요
 - 추가 버튼: 사전 선택 조건 → 버튼 클릭 → 실행 결과 확인 흐름으로 작성하고, 관련 검증/주의사항이 있으면 Step에 반영하세요
 - 화면에 제공된 조회조건 항목명, 그리드 컬럼명, 검증 메시지를 Step 설명에 직접 활용하세요
 - 한국어로 작성하세요`,
@@ -242,10 +282,32 @@ Step2. 설명
     },
   ];
 
-  const { text, promptTokens, completionTokens } = await callGitHubModelsApi(apiKey, model, messages);
+  const { text, promptTokens, completionTokens } = await callGitHubModelsApi(apiKey, model, messages, options);
   onLog?.({ apiCall: '사용방법 생성', promptTokens, completionTokens });
-  // 후처리: 소제목에 남은 '기능' 단어 제거 (예: {B}조회 기능{/B} → {B}조회{/B})
-  return text.replace(/\{B\}([^{]+?)\s+기능\s*\{\/B\}/g, '{B}$1{/B}');
+
+  // ── 후처리 1: 소제목에 남은 '기능' 단어 제거
+  let processed = text.replace(/\{B\}([^{]+?)\s+기능\s*\{\/B\}/g, '{B}$1{/B}');
+
+  // ── 후처리 2: 파서 CRUD 플래그와 불일치하는 AI 생성 섹션 제거
+  // ex) AI가 "학생 기본 정보 - 신규" 섹션을 생성했으나 tb.hasNew = false → 제거
+  const forbiddenSections: string[] = [];
+  for (const tb of result.usage.titleBars) {
+    const label = (tb.title || '상세 정보').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!tb.hasNew)    forbiddenSections.push(`\\{B\\}${label}\\s*[-–]\\s*신규\\{/B\\}`);
+    if (!tb.hasSave)   forbiddenSections.push(`\\{B\\}${label}\\s*[-–]\\s*저장\\{/B\\}`);
+    if (!tb.hasDelete) forbiddenSections.push(`\\{B\\}${label}\\s*[-–]\\s*삭제\\{/B\\}`);
+  }
+  if (forbiddenSections.length > 0) {
+    // 각 금지 소제목 + 이어지는 Step 줄들을 제거
+    for (const pattern of forbiddenSections) {
+      processed = processed.replace(
+        new RegExp(`${pattern}\\n(?:Step\\d+\\.[^\\n]*\\n?)*`, 'g'),
+        '',
+      );
+    }
+  }
+
+  return processed;
 }
 
 /**
@@ -266,6 +328,7 @@ export async function generateAiConditionDescriptions(
   onLog?: (log: AiCallLog) => void,
   groupType: '조회조건' | '처리조건' | '일괄처리' = '조회조건',
   transactionFeatures: string[] = [],
+  options?: ApiCallOptions,
 ): Promise<string[]> {
   if (controls.length === 0) return [];
 
@@ -312,7 +375,7 @@ export async function generateAiConditionDescriptions(
     { role: 'user', content: userPrompt },
   ];
 
-  const { text: response, promptTokens, completionTokens } = await callGitHubModelsApi(apiKey, model, messages);
+  const { text: response, promptTokens, completionTokens } = await callGitHubModelsApi(apiKey, model, messages, options);
   onLog?.({ apiCall: `조건항목 설명 생성 (${groupTitle})`, promptTokens, completionTokens });
 
   const descriptions: string[] = new Array(controls.length).fill('');
@@ -341,7 +404,8 @@ export async function generateAiColumnDescriptions(
   model: string,
   gridTitle: string,
   columns: Array<{ headerText: string; controlType: string; purpose: string }>,
-  onLog?: (log: AiCallLog) => void
+  onLog?: (log: AiCallLog) => void,
+  options?: ApiCallOptions,
 ): Promise<string[]> {
   if (columns.length === 0) return [];
 
@@ -365,7 +429,7 @@ export async function generateAiColumnDescriptions(
     },
   ];
 
-  const { text: response, promptTokens, completionTokens } = await callGitHubModelsApi(apiKey, model, messages);
+  const { text: response, promptTokens, completionTokens } = await callGitHubModelsApi(apiKey, model, messages, options);
   onLog?.({ apiCall: `컬럼 설명 생성 (${gridTitle})`, promptTokens, completionTokens });
 
   // "번호. 설명" 형식 파싱
@@ -395,7 +459,8 @@ export async function generateAiNotes(
   model: string,
   programName: string,
   warnings: Array<{ label: string; messages: string[] }>,
-  onLog?: (log: AiCallLog) => void
+  onLog?: (log: AiCallLog) => void,
+  options?: ApiCallOptions,
 ): Promise<Map<string, string[]>> {
   if (warnings.length === 0) return new Map();
 
@@ -438,7 +503,7 @@ export async function generateAiNotes(
     },
   ];
 
-  const { text, promptTokens, completionTokens } = await callGitHubModelsApi(apiKey, model, messages);
+  const { text, promptTokens, completionTokens } = await callGitHubModelsApi(apiKey, model, messages, options);
   onLog?.({ apiCall: '참고사항 설명 생성', promptTokens, completionTokens });
 
   // "번호. 설명" 형식 파싱 → 그룹별 매핑 복원
