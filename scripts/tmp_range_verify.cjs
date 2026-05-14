@@ -10,7 +10,7 @@ function shortType(fullType) { return fullType.split('.').pop() ?? fullType; }
 function isUdcType(fullType) { return fullType.startsWith('udc.'); }
 function isSeparatorLabel(label) { return /^[~\-\/|·•]+$/.test(label.trim()); }
 
-const LAYOUT_CONTAINER_RE = /^(LAYOUT|SEARCHGROUP|CONDITIONGROUP|GRID_GROUP|CT_)/;
+const LAYOUT_CONTAINER_RE = /^(LAYOUT|SEARCHGROUP|CONDITIONGROUP|BATCH_GROUP|GRID_GROUP|CT_)/;
 
 function extractNestedFunctionBody(body, varName) {
   const endPattern = `})(${varName})`;
@@ -119,7 +119,7 @@ function parseBodyControls(body, fullContent) {
   for (const { rowIndex, colIndex, nestedBody } of nestedEntries) {
     const nestedControls = parseBodyControls(nestedBody, fullContent);
     for (const nc of nestedControls) {
-      result.push({ ...nc, rowIndex, colIndex: colIndex + (nc.colIndex + 1) * 0.01 });
+      result.push({ ...nc, rowIndex: rowIndex + nc.rowIndex * 0.1, colIndex: colIndex + (nc.colIndex + 1) * 0.01 });
     }
   }
   return result;
@@ -225,26 +225,25 @@ function buildPairs(controls) {
 
 function parseConditionGroups(content) {
   const groups = [];
-  const containerRe = /new\s+cpr\.controls\.Container\("((SEARCHGROUP|CONDITIONGROUP)(\d+))"\)/g;
+  const containerRe = /new\s+cpr\.controls\.Container\("((SEARCHGROUP|CONDITIONGROUP|BATCH_GROUP)(\d+))"\)/g;
   let m;
   while ((m = containerRe.exec(content)) !== null) {
     const groupId = m[1];
-    const groupType = m[2] === 'SEARCHGROUP' ? '조회조건' : '처리조건';
+    const groupType = m[2] === 'SEARCHGROUP' ? '조회조건' : m[2] === 'CONDITIONGROUP' ? '처리조건' : '일괄처리';
     const body = extractFunctionBody(content, m.index);
     if (!body) { console.log(`  [WARN] ${groupId} body 추출 실패`); continue; }
     const controls = parseBodyControls(body, content);
     const pairs = buildPairs(controls);
-    console.log(`\n[${groupId}] controls:${controls.length}, pairs:${pairs.length}`);
+    console.log(`\n[${groupId}/${groupType}] controls:${controls.length}, pairs:${pairs.length}`);
     for (const p of pairs) console.log(`  ${p.controlId} (${p.controlType}) → "${p.labelText}"`);
     if (pairs.length > 0) groups.push({ groupId, groupType, controls: pairs });
   }
   return groups;
 }
 
-// 테스트
+// 테스트 (usc_3010201_u: BATCH_GROUP 검증)
 const files = [
-  'D:/workspace_pkg2_term (2)/workspace_pkg2_term/exbuilder/clx-build/univ/screg/usc05/usc_3010505_v.clx.js',
-  'D:/workspace_pkg2_term (2)/workspace_pkg2_term/exbuilder/clx-build/univ/screg/usc05/usc_3010504_v.clx.js',
+  'D:/exbuilder/clx-build/univ/screg/usc02/usc_3010201_u.clx.js',
 ];
 for (const f of files) {
   console.log('\n======== ' + path.basename(f) + ' ========');
