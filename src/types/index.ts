@@ -66,6 +66,8 @@ export interface ExtButtonInfo {
   index: number;
   /** 함수 바디 분석으로 생성된 다단계 설명 (개행 구분) */
   description?: string;
+  /** 팝업 오픈 URL (ex: "common/system/csm01/csm_1020101_p02") — cross-reference용 */
+  popupUrl?: string;
 }
 
 /**
@@ -189,6 +191,18 @@ export interface ConditionGroupInfo {
 }
 
 
+/**
+ * INFOGROUP(세부정보 입력 그룹) 정보
+ */
+export interface InfoGroupInfo {
+  /** 그룹 ID (INFOGROUP01 등) */
+  groupId: string;
+  /** CT_INFOTITLE{N}.title 값 */
+  title?: string;
+  /** 항목 목록 */
+  controls: ConditionControlInfo[];
+}
+
 export interface AnalysisResult {
   /** 분석 대상 파일 경로 */
   filePath: string;
@@ -220,6 +234,8 @@ export interface AnalysisResult {
   items: {
     /** 조회조건/처리조건 그룹 목록 */
     conditionGroups: ConditionGroupInfo[];
+    /** INFOGROUP(세부정보 입력) 목록 */
+    infoGroups: InfoGroupInfo[];
     /** 그리드 목록 */
     grids: GridInfo[];
   };
