@@ -1,1 +1,6 @@
 /node_modules
+/dist
+
+# 스크립트 분석 결과 파일
+scripts/*.txt
+scripts/*.json
