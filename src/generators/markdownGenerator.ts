@@ -229,17 +229,32 @@ export function generateMarkdown(result: AnalysisResult): string {
     }
   }
 
-  // 항목 (조회조건/처리조건 + 그리드)
+  // 항목 (조회조건/처리조건 + INFOGROUP + 그리드)
   const hasCondGroups = result.items.conditionGroups.length > 0;
+  const hasInfoGroups = result.items.infoGroups.length > 0;
   const hasGrids = result.items.grids.length > 0;
 
-  if (hasCondGroups || hasGrids) {
+  if (hasCondGroups || hasInfoGroups || hasGrids) {
     lines.push('## 항목');
     lines.push('');
 
     // 조회조건/처리조건
     for (const group of result.items.conditionGroups) {
       const heading = group.title ?? group.groupType;
+      lines.push(`### ${heading} (${group.groupId})`);
+      lines.push('');
+      lines.push('| 항목명 | 설명 | 타입 | 용도 |');
+      lines.push('|-------|------|------|-------------------|');
+      for (const ctrl of group.controls) {
+        const label = ctrl.labelText || ctrl.controlId;
+        lines.push(`| ${label} | ${ctrl.description || ''} | ${ctrl.controlType} | ${ctrl.inputType === '입력' ? '입력 또는 선택' : ctrl.inputType} |`);
+      }
+      lines.push('');
+    }
+
+    // INFOGROUP (세부정보 입력 그룹)
+    for (const group of result.items.infoGroups) {
+      const heading = group.title ?? group.groupId;
       lines.push(`### ${heading} (${group.groupId})`);
       lines.push('');
       lines.push('| 항목명 | 설명 | 타입 | 용도 |');

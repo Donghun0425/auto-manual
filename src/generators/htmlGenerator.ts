@@ -414,13 +414,39 @@ function generateNotesHtml(result: AnalysisResult): string {
 /** 조회조건/처리조건 HTML 생성 */
 function generateConditionGroupsHtml(result: AnalysisResult): string {
   const groups = result.items.conditionGroups;
-  if (groups.length === 0) return '';
+  const infoGroups = result.items.infoGroups;
+  if (groups.length === 0 && infoGroups.length === 0) return '';
 
   const lines: string[] = ['<h2>항목</h2>'];
 
   for (const group of groups) {
     lines.push('<div class="section">');
     const heading = group.title ?? escapeHtml(group.groupType);
+    lines.push(`<h3>${heading} <span style="font-size:11px;color:#888;font-weight:normal;">(${escapeHtml(group.groupId)})</span></h3>`);
+
+    if (group.controls.length > 0) {
+      lines.push('<table><thead><tr>');
+      lines.push('<th style="width:18%">항목명</th><th>설명</th><th style="width:15%">타입</th><th style="width:18%">용도</th>');
+      lines.push('</tr></thead><tbody>');
+
+      for (const ctrl of group.controls) {
+        lines.push(`<tr>
+          <td>${escapeHtml(ctrl.labelText || ctrl.controlId)}</td>
+          <td>${escapeHtml(ctrl.description)}</td>
+          <td><code>${escapeHtml(ctrl.controlType)}</code></td>
+          <td>${escapeHtml(ctrl.inputType === '입력' ? '입력 또는 선택' : ctrl.inputType)}</td>
+        </tr>`);
+      }
+
+      lines.push('</tbody></table>');
+    }
+
+    lines.push('</div>');
+  }
+
+  for (const group of infoGroups) {
+    lines.push('<div class="section">');
+    const heading = escapeHtml(group.title ?? group.groupId);
     lines.push(`<h3>${heading} <span style="font-size:11px;color:#888;font-weight:normal;">(${escapeHtml(group.groupId)})</span></h3>`);
 
     if (group.controls.length > 0) {
@@ -450,8 +476,8 @@ function generateConditionGroupsHtml(result: AnalysisResult): string {
 function generateItemsHtml(result: AnalysisResult): string {
   if (result.items.grids.length === 0) return '';
 
-  // 조건 그룹이 없을 때만 h2 헤더 출력 (있으면 generateConditionGroupsHtml가 이미 출력)
-  const hasCondGroups = result.items.conditionGroups.length > 0;
+  // 조건 그룹이나 INFOGROUP이 없을 때만 h2 헤더 출력
+  const hasCondGroups = result.items.conditionGroups.length > 0 || result.items.infoGroups.length > 0;
   const lines: string[] = hasCondGroups ? [] : ['<h2>항목</h2>'];
 
   for (const grid of result.items.grids) {
