@@ -42,21 +42,67 @@ function parseGridTitleMap(content: string): Map<string, string> {
 
 /**
  * 헤더 섹션에서 colIndex → 헤더텍스트 맵 추출
- * - cell.filterable/sortable 등 다른 속성이 cell.text 앞에 있어도 정상 처리
- * - 마지막 write wins: rowIndex 1 세부 헤더가 rowIndex 0 그룹 헤더를 덮어씀
+ *
+ * [개선] configurator 블록 범위 기반 파싱 + colSpan 전파
+ * - 각 "constraint"+"configurator" 블록을 분리, 블록 내에서만 cell.text 탐색
+ * - colSpan이 있는 그룹 헤더(rowIndex=0)는 span 범위 내 모든 colIndex에 전파
+ * - rowIndex >= 1의 세부 헤더가 그룹 헤더를 덮어씀 (last write wins)
  */
 function parseHeaderCells(headerSection: string): Map<number, string> {
-  const headerCells = new Map<number, string>();
-  const textPattern = /cell\.text\s*=\s*"((?:[^"\\]|\\.)*)"/g;
-  let tMatch: RegExpExecArray | null;
+  // 1단계: 모든 블록 수집
+  const constraintRe =
+    /"constraint"\s*:\s*\{([^}]+)\}\s*,\s*"configurator"\s*:\s*function\s*\(cell\)\s*\{/g;
+  let cMatch: RegExpExecArray | null;
 
-  while ((tMatch = textPattern.exec(headerSection)) !== null) {
-    const lookback = headerSection.slice(Math.max(0, tMatch.index - 400), tMatch.index);
-    const colMatches = [...lookback.matchAll(/"colIndex":\s*(\d+)/g)];
-    if (colMatches.length > 0) {
-      const colIdx = parseInt(colMatches[colMatches.length - 1][1]);
-      headerCells.set(colIdx, cleanHeaderText(tMatch[1]));
+  // 그룹 헤더 (rowIndex=0, colSpan 포함) 및 세부 헤더 (rowIndex>=1) 분리 저장
+  const groupEntries: Array<{ colIndex: number; colSpan: number; text: string }> = [];
+  const subEntries: Array<{ colIndex: number; text: string }> = [];
+
+  while ((cMatch = constraintRe.exec(headerSection)) !== null) {
+    const constraintStr = cMatch[1];
+
+    const ciM = /"colIndex":\s*(\d+)/.exec(constraintStr);
+    if (!ciM) continue;
+    const colIndex = parseInt(ciM[1]);
+
+    const riM = /"rowIndex":\s*(\d+)/.exec(constraintStr);
+    const rowIndex = riM ? parseInt(riM[1]) : 0;
+
+    const spanM = /"colSpan":\s*(\d+)/.exec(constraintStr);
+    const colSpan = spanM ? parseInt(spanM[1]) : 1;
+
+    // configurator 본문: 다음 "constraint" 직전까지
+    const bodyStart = cMatch.index + cMatch[0].length;
+    const nextConstraint = headerSection.indexOf('"constraint"', bodyStart);
+    const bodyEnd = nextConstraint > bodyStart ? nextConstraint : bodyStart + 2000;
+    const body = headerSection.slice(bodyStart, Math.min(bodyEnd, bodyStart + 2000));
+
+    const textM = /cell\.text\s*=\s*"((?:[^"\\]|\\.)*)"/.exec(body);
+    if (!textM) continue;
+    const text = cleanHeaderText(textM[1]);
+    if (!text) continue; // 빈 문자열 (설계자가 의도적으로 비운 경우) 스킵
+
+    if (rowIndex === 0) {
+      groupEntries.push({ colIndex, colSpan, text });
+    } else {
+      subEntries.push({ colIndex, text });
     }
+  }
+
+  const headerCells = new Map<number, string>();
+
+  // 2단계: 그룹 헤더를 colSpan 범위 전체에 적용 (가장 낮은 우선순위)
+  for (const { colIndex, colSpan, text } of groupEntries) {
+    for (let ci = colIndex; ci < colIndex + colSpan; ci++) {
+      if (!headerCells.has(ci)) {
+        headerCells.set(ci, text);
+      }
+    }
+  }
+
+  // 3단계: 세부 헤더(rowIndex>=1)로 덮어씀 (높은 우선순위)
+  for (const { colIndex, text } of subEntries) {
+    headerCells.set(colIndex, text);
   }
 
   return headerCells;
