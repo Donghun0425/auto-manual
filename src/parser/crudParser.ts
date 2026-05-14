@@ -6,6 +6,29 @@
 import { CrudInfo, ExtButtonInfo } from '@/types';
 
 /**
+ * CSS 클래스명 → 버튼 라벨 매핑
+ * value가 빈 문자열인 아이콘 버튼에 의미있는 라벨 부여
+ */
+const CSS_CLASS_LABEL_MAP: Record<string, string> = {
+  'arrow-right':        '>',
+  'arrow-left':         '<',
+  'arrow-up':           '↑',
+  'arrow-down':         '↓',
+  'arrow-double-right': '>>',
+  'arrow-double-left':  '<<',
+  'arrow-right-double': '>>',
+  'arrow-left-double':  '<<',
+};
+
+/**
+ * style.setClasses 에서 첫 번째 클래스명을 추출하여 라벨로 변환
+ * 매핑에 없는 클래스는 null 반환
+ */
+function classToLabel(className: string): string | null {
+  return CSS_CLASS_LABEL_MAP[className.trim()] ?? null;
+}
+
+/**
  * PatisMenuTitleBar의 CRUD 기능 존재 여부 분석
  * @param content - .clx.js 파일 내용
  * @returns PatisMenuTitleBar CRUD 정보
@@ -36,10 +59,16 @@ export function parseMenuTitleBarCrud(content: string): CrudInfo {
   for (const match of extMatches) {
     const btnIndex = parseInt(match[1]);
     const btnName = extractExtButtonName(content, `Form_ext${btnIndex}Click`);
+    const resolvedName = btnName || `추가버튼${btnIndex}`;
+    const body = extractFunctionBody(content, `Form_ext${btnIndex}Click`);
+    const popupUrl = extractPopupUrl(body) ?? undefined;
+    const desc = analyzeBtnFunctionBody(body, resolvedName);
     result.extButtons.push({
-      name: btnName || `추가버튼${btnIndex}`,
+      name: resolvedName,
       functionName: `Form_ext${btnIndex}Click`,
       index: btnIndex,
+      ...(popupUrl ? { popupUrl } : {}),
+      ...(desc ? { description: desc } : {}),
     });
   }
 
@@ -63,6 +92,20 @@ function extractFunctionBody(content: string, functionName: string): string {
     }
   }
   return content.slice(start);
+}
+
+/**
+ * 함수 바디에서 PatisUtils.openPopup 호출 시 팝업 URL을 추출한다.
+ * 패턴: var popupUrl = "경로"; 또는 openPopup(..., "경로", ...)
+ */
+export function extractPopupUrl(body: string): string | null {
+  // 패턴 1: var popupUrl = "경로"
+  const varMatch = /var\s+popupUrl\s*=\s*"([^"]+)"/.exec(body);
+  if (varMatch) return varMatch[1];
+  // 패턴 2: openPopup(popupId, args, "경로", ...) — 세 번째 인자가 문자열 리터럴인 경우
+  const callMatch = /openPopup\s*\([^,]+,[^,]+,\s*"([^"]+)"/.exec(body);
+  if (callMatch) return callMatch[1];
+  return null;
 }
 
 /**
@@ -166,6 +209,11 @@ function analyzeBtnFunctionBody(body: string, btnName: string): string | null {
     return steps.join('\n');
   }
 
+  // 팝업 호출 패턴
+  if (/openPopup|PatisUtils\.openPopup/.test(body)) {
+    return `Step1. '${name}' 버튼을 클릭하여 팝업 화면을 연다.`;
+  }
+
   return null; // 패턴 미매칭 → 제너레이터 기본 설명 사용
 }
 
@@ -236,8 +284,9 @@ export function parseTitleBarCrud(content: string): CrudInfo[] {
       seenExtIdx.add(idx);
       const fn   = `TitleForm_ext${idx}Click`;
       const body = extractFunctionBody(content, fn);
+      const popupUrl = extractPopupUrl(body) ?? undefined;
       const desc = analyzeBtnFunctionBody(body, name);
-      extButtons.push({ name, functionName: fn, index: idx, ...(desc ? { description: desc } : {}) });
+      extButtons.push({ name, functionName: fn, index: idx, ...(popupUrl ? { popupUrl } : {}), ...(desc ? { description: desc } : {}) });
     };
 
     // 형식 B: varName.initAddButton(index, "label")
@@ -387,11 +436,13 @@ function buildGlobalTitleExtButtons(content: string): ExtButtonInfo[] {
     const btnIndex = parseInt(match[1]);
     const btnName  = extractExtButtonName(content, `TitleForm_ext${btnIndex}Click`);
     const body     = extractFunctionBody(content, `TitleForm_ext${btnIndex}Click`);
+    const popupUrl = extractPopupUrl(body) ?? undefined;
     const desc     = btnName ? analyzeBtnFunctionBody(body, btnName) : null;
     buttons.push({
       name:         btnName || `타이틀바 추가버튼${btnIndex}`,
       functionName: `TitleForm_ext${btnIndex}Click`,
       index:        btnIndex,
+      ...(popupUrl ? { popupUrl } : {}),
       ...(desc ? { description: desc } : {}),
     });
   }
@@ -464,6 +515,27 @@ function extractExtButtonName(content: string, functionName: string): string | n
   while ((cm = commentRe.exec(searchArea)) !== null) lastComment = cm;
   if (lastComment) return lastComment[1].trim();
 
+  // 4순위: 함수 직전 JSDoc 블록(/** ... */)의 첫 번째 설명 줄
+  // 예) * 발주처리 / * 발주 취소 (@param/@author/@see 등 태그 줄 제외)
+  const jsdocBlockRe = /\/\*{2,}[\s\S]*?\*\//g;
+  let lastJsdoc: RegExpExecArray | null = null;
+  let jm: RegExpExecArray | null;
+  while ((jm = jsdocBlockRe.exec(searchArea)) !== null) lastJsdoc = jm;
+  if (lastJsdoc) {
+    const blockLines = lastJsdoc[0].split('\n');
+    for (const line of blockLines) {
+      // 선행 공백·/ ·* 제거 (/** 열기줄, */ 닫기줄도 빈 문자열이 됨)
+      const stripped = line.replace(/^\s*[/*]+\s*/, '').trim();
+      if (!stripped || /^@/.test(stripped)) continue;
+      // JSDoc 함수 설명 접미사 제거: "버튼 클릭 이벤트함수", "클릭 이벤트함수" 등
+      return stripped
+        .replace(/\s*버튼\s*클릭\s*이벤트\s*함수\s*$/i, '')
+        .replace(/\s*클릭\s*이벤트\s*함수\s*$/i, '')
+        .replace(/\s*이벤트\s*함수\s*$/i, '')
+        .trim();
+    }
+  }
+
   return null;
 }
 
@@ -516,6 +588,12 @@ export function parseExtraButtons(content: string): ExtButtonInfo[] {
     const valueMatch = new RegExp(`${varName}\\.value\\s*=\\s*"([^"]+)"`).exec(afterDecl);
     const label = valueMatch ? valueMatch[1] : null;
 
+    // value가 없는 경우 CSS 클래스로 라벨 추론 (예: arrow-right → '>')
+    const classMatch = new RegExp(
+      `${varName}\\.style\\.setClasses\\s*\\(\\s*\\[\\s*"([^"]+)"`,
+    ).exec(afterDecl);
+    const classLabel = classMatch ? classToLabel(classMatch[1]) : null;
+
     // 클릭 핸들러: varName.addEventListener("click", handlerFn)
     const handlerMatch = new RegExp(
       `${varName}\\.addEventListener\\("click"\\s*,\\s*(\\w+)\\)`,
@@ -527,7 +605,7 @@ export function parseExtraButtons(content: string): ExtButtonInfo[] {
     if (/^Form_|^TitleForm_|^App_/.test(handlerFn)) continue;
 
     seenControlId.add(controlId);
-    const btnLabel = label || controlId;
+    const btnLabel = label || classLabel || controlId;
     const body2 = extractFunctionBody(content, handlerFn);
     const desc2 = analyzeBtnFunctionBody(body2, btnLabel);
     buttons.push({
