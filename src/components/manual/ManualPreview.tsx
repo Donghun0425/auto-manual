@@ -19,6 +19,8 @@ const COPY_TOOLTIPS: Record<'화면개요' | '사용방법' | '참고사항', st
   '참고사항': '통합정보시스템 도움말 레이아웃에 맞게 \'참고사항\'을 복사합니다.',
 };
 
+const ITEMS_COPY_TOOLTIP = '조회조건, 그리드 등 항목 설명을 HTML 문법 그대로 복사합니다.';
+
 interface ManualPreviewProps {
   /** 매뉴얼 출력 배열 */
   outputs: ManualOutput[];
@@ -43,6 +45,19 @@ export function ManualPreview({ outputs, allFilePaths = [], onNavigate }: Manual
 
   /** markdown 텍스트에서 {B}/{/B} 태그 제거 (표시용) */
   const stripBTags = (text: string) => text.replace(/\{B\}|\{\/B\}/g, '');
+
+  /**
+   * output.html에서 '항목' 섹션(<h2>항목</h2> ~ 다음 <h2>) HTML 추출
+   * 조회조건/그리드 테이블을 HTML 문법 그대로 반환
+   */
+  const extractItemsHtml = (html: string): string => {
+    const start = html.indexOf('<h2>항목</h2>');
+    if (start < 0) return '';
+    const nextH2 = html.indexOf('<h2>', start + 1);
+    const bodyEnd = html.indexOf('</body>', start);
+    const end = nextH2 >= 0 ? nextH2 : (bodyEnd >= 0 ? bodyEnd : html.length);
+    return html.slice(start, end).trim();
+  };
 
   /**
    * 섹션별 클립보드 복사용 텍스트 추출
@@ -160,7 +175,7 @@ export function ManualPreview({ outputs, allFilePaths = [], onNavigate }: Manual
               <Badge variant="secondary" className="text-[10px]">생성 완료</Badge>
             </div>
             <div className="flex items-center gap-1.5">
-              {/* 섹션 복사 버튼 3개 */}
+              {/* 섹션 복사 버튼 3개 + 항목 */}
               {(['화면개요', '사용방법', '참고사항'] as const).map((section) => {
                 const key = `${output.filePath}-${section}`;
                 const isCopied = copied === key;
@@ -185,6 +200,31 @@ export function ManualPreview({ outputs, allFilePaths = [], onNavigate }: Manual
                   </Tooltip>
                 );
               })}
+              {/* 항목 HTML 복사 버튼 */}
+              {(() => {
+                const key = `${output.filePath}-항목`;
+                const isCopied = copied === key;
+                const itemsHtml = extractItemsHtml(output.html);
+                return (
+                  <Tooltip key="항목">
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        disabled={!itemsHtml}
+                        onClick={() => handleCopy(itemsHtml, key)}
+                        className="border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800 hover:border-blue-400 disabled:opacity-40"
+                      >
+                        {isCopied ? <Check className="h-3 w-3" /> : <ClipboardCopy className="h-3 w-3" />}
+                        {isCopied ? '복사됨' : '항목'}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-[220px] text-center text-xs">
+                      {ITEMS_COPY_TOOLTIP}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })()}
               <Separator orientation="vertical" className="h-5" />
               <Button variant="outline" size="xs" onClick={() => downloadHtml(output)}>
                 <Download className="h-3 w-3" />

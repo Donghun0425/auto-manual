@@ -3,18 +3,19 @@
  * - 조회조건/처리조건 그룹 표시
  * - 그리드 정보 표시 (타이틀 + 컬럼 목록)
  */
-import { GridInfo, ConditionGroupInfo } from '@/types';
+import { GridInfo, ConditionGroupInfo, InfoGroupInfo } from '@/types';
 import { Badge } from '@/components/ui/badge';
 
 interface ItemsSectionProps {
   items: {
     conditionGroups: ConditionGroupInfo[];
+    infoGroups: InfoGroupInfo[];
     grids: GridInfo[];
   };
 }
 
 export function ItemsSection({ items }: ItemsSectionProps) {
-  const hasContent = items.conditionGroups.length > 0 || items.grids.length > 0;
+  const hasContent = items.conditionGroups.length > 0 || items.infoGroups.length > 0 || items.grids.length > 0;
   if (!hasContent) return null;
 
   return (
@@ -25,6 +26,48 @@ export function ItemsSection({ items }: ItemsSectionProps) {
           <div className="flex items-center gap-2">
             <h4 className="text-sm font-semibold">
               {group.title ?? group.groupType}
+            </h4>
+            <span className="text-xs text-muted-foreground">({group.groupId})</span>
+          </div>
+          {group.controls.length > 0 ? (
+            <div className="rounded-md border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left py-1.5 px-3 font-medium text-muted-foreground w-28">항목명</th>
+                    <th className="text-left py-1.5 px-3 font-medium text-muted-foreground">설명</th>
+                    <th className="text-left py-1.5 px-3 font-medium text-muted-foreground w-24">타입</th>
+                    <th className="text-left py-1.5 px-3 font-medium text-muted-foreground w-24">용도</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.controls.map((ctrl, idx) => (
+                    <tr key={idx} className="border-b last:border-b-0 hover:bg-muted/30">
+                      <td className="py-1.5 px-3 font-medium">{ctrl.labelText || ctrl.controlId}</td>
+                      <td className="py-1.5 px-3 text-muted-foreground">{ctrl.description || '-'}</td>
+                      <td className="py-1.5 px-3">
+                        <code className="text-[10px] font-mono text-primary/70">{ctrl.controlType}</code>
+                      </td>
+                      <td className="py-1.5 px-3">
+                        <InputTypeBadge inputType={ctrl.inputType} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">항목 없음</p>
+          )}
+        </div>
+      ))}
+
+      {/* INFOGROUP (세부정보 입력 그룹) */}
+      {items.infoGroups.map((group) => (
+        <div key={group.groupId} className="space-y-2">
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold">
+              {group.title ?? group.groupId}
             </h4>
             <span className="text-xs text-muted-foreground">({group.groupId})</span>
           </div>
