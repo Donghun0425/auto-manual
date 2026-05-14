@@ -217,9 +217,13 @@ export async function generateAiUsage(
     .filter(Boolean)
     .join(', ');
 
-  // 추가 버튼 상세 (검증 메시지에서 버튼 이름과 연관된 메시지 추출)
+  // 추가 버튼 상세 (팝업 분석 description 우선, 없으면 검증 메시지에서 추출)
   const extButtonDetails = menu.extButtons
     .map((btn) => {
+      // 팝업 분석으로 생성된 description이 있으면 우선 사용
+      if (btn.description) {
+        return `  - ${btn.name}:\n${btn.description.split('\n').map(l => '    ' + l).join('\n')}`;
+      }
       const relatedValidations = result.notes.validations
         .filter((v) => {
           const msg = v.message.replace(/\\n/g, ' ');
@@ -326,7 +330,7 @@ export async function generateAiConditionDescriptions(
   groupTitle: string,
   controls: Array<{ labelText: string; controlType: string; inputType: string }>,
   onLog?: (log: AiCallLog) => void,
-  groupType: '조회조건' | '처리조건' | '일괄처리' = '조회조건',
+  groupType: '조회조건' | '처리조건' | '일괄처리' | '세부정보' = '조회조건',
   transactionFeatures: string[] = [],
   options?: ApiCallOptions,
 ): Promise<string[]> {
@@ -359,6 +363,15 @@ export async function generateAiConditionDescriptions(
       `응답 예시 (주요기능: ${txList}):\n` +
       `1. 선택한 처리구분에 의해 일괄처리${txParens}을 진행합니다.\n` +
       `2. 선택한 대상학기에 의해 데이터 갱신${txParens}을 진행합니다.`;
+  } else if (groupType === '세부정보') {
+    systemPrompt =
+      '당신은 업무 시스템 사용자 매뉴얼을 작성하는 전문가입니다. ' +
+      '각 세부정보 항목에 대해 일반 사용자가 이해하기 쉽는 업무적 설명을 한국어 1줄(30자 이내)로 작성하세요. ' +
+      '항목이 표시하거나 입력하는 정보의 업무적 의미를 설명하세요. ' +
+      '반드시 "번호. 설명" 형식으로만 응답하세요.';
+    userPrompt =
+      `"${groupTitle}" 세부정보 항목 목록입니다. 각 항목의 업무적 의미를 1줄로 설명해주세요.\n\n${ctrlList}\n\n` +
+      `응답 형식 예시:\n1. 해당 코드의 코드명을 표시합니다.\n2. 적용 대상의 학번을 입력합니다.`;
   } else {
     systemPrompt =
       '당신은 업무 시스템 사용자 매뉴얼을 작성하는 전문가입니다. ' +

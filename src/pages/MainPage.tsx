@@ -140,6 +140,24 @@ export function MainPage() {
               }
             }
 
+            // INFOGROUP 항목별 AI 설명 생성
+            for (const group of result.items.infoGroups) {
+              if (group.controls.length > 0) {
+                const descs = await generateAiConditionDescriptions(
+                  effectiveApiKey, aiModel,
+                  `${result.overview.programName} - ${group.title || group.groupId}`,
+                  group.controls,
+                  onLog,
+                  '세부정보',
+                  [],
+                  aiOptions,
+                );
+                group.controls.forEach((ctrl, i) => {
+                  ctrl.description = descs[i] ?? '';
+                });
+              }
+            }
+
             // 그리드 컬럼별 AI 설명 생성 (고정 설명이 있는 그리드는 제외)
             for (const grid of result.items.grids) {
               if (grid.columns.length > 0 && !grid.skipAiDescriptions) {
