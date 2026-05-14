@@ -270,13 +270,17 @@ function parseBodyControls(body: string, fullContent: string): Array<{
     result.push({ varName, controlId, controlType: type, fullType: fType, labelValue, colIndex, rowIndex, isReadOnly, isDisabled });
   }
 
-  // 중첩 컨테이너 내 컨트롤: 부모 rowIndex/colIndex 적용
+  // 중첩 컨테이너 내 컨트롤: 부모 rowIndex + 내부 rowIndex 오프셋 적용
+  // - colIndex: 부모 col + 내부 col 오프셋 (기존 동일)
+  // - rowIndex: 부모 row + 내부 row * 0.1
+  //   → 단일 행 중첩 컨테이너(nc.rowIndex=0)는 기존과 동일
+  //   → INFOGROUP 등 다중 행 중첩 컨테이너는 행이 분리되어 올바른 라벨 매칭
   for (const { rowIndex, colIndex, nestedBody } of nestedEntries) {
     const nestedControls = parseBodyControls(nestedBody, fullContent);
     for (const nc of nestedControls) {
       result.push({
         ...nc,
-        rowIndex,
+        rowIndex: rowIndex + nc.rowIndex * 0.1,
         colIndex: colIndex + (nc.colIndex + 1) * 0.01,
       });
     }
@@ -309,6 +313,9 @@ function buildPairs(controls: ReturnType<typeof parseBodyControls>): ConditionCo
   for (const [, row] of rowMap) {
     row.labels.sort((a, b) => a.colIndex - b.colIndex);
     row.inputs.sort((a, b) => a.colIndex - b.colIndex);
+
+    // CLX 오버레이 패턴 제거: 동일 행에서 같은 라벨에 매핑된 컨트롤(InputBox·ComboBox·PatisCombo 겹침)은 첫 번째만 유지
+    const seenLabelsInRow = new Set<string>();
 
     for (const input of row.inputs) {
       let labelText: string;
@@ -371,6 +378,9 @@ function buildPairs(controls: ReturnType<typeof parseBodyControls>): ConditionCo
           }
         }
       }
+
+      if (seenLabelsInRow.has(labelText)) continue;
+      seenLabelsInRow.add(labelText);
 
       result.push({
         controlId: input.controlId,
